@@ -203,7 +203,14 @@ app.get('/api/health', (req, res) => {
 
 // Serve React app
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../client/build/index.html'));
+  const buildPath = path.join(__dirname, '../client/build/index.html');
+  console.log('Looking for build file at:', buildPath);
+  res.sendFile(buildPath, (err) => {
+    if (err) {
+      console.error('Error serving React app:', err);
+      res.status(404).send('React app not found. Please build the client first.');
+    }
+  });
 });
 
 server.listen(PORT, () => {
