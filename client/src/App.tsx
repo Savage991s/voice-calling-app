@@ -116,32 +116,12 @@ const App: React.FC = () => {
           }).catch(e => {
             console.error('Audio play failed for', userId, ':', e);
             console.log('This is normal on mobile - audio will play when user interacts');
-            // Store the audio element for later retry
-            (audio as any).needsUserInteraction = true;
           });
         }
       };
       
       audio.onplay = () => console.log('🎵 Audio started playing for', userId);
       audio.onerror = (e) => console.error('🎵 Audio error for', userId, e);
-      
-      // Mobile-specific: Try to play when user interacts
-      const tryPlayOnInteraction = () => {
-        console.log('User interaction detected, trying to play audio for', userId);
-        if (audio.paused) {
-          audio.play().then(() => {
-            console.log('🎵 Audio started playing after user interaction for', userId);
-            (audio as any).needsUserInteraction = false;
-          }).catch(e => {
-            console.log('Still can\'t play audio after interaction:', e);
-          });
-        }
-      };
-      
-      // Add click listeners to try playing audio
-      document.addEventListener('click', tryPlayOnInteraction, { once: true });
-      document.addEventListener('touchstart', tryPlayOnInteraction, { once: true });
-      document.addEventListener('touchend', tryPlayOnInteraction, { once: true });
       
       // Store the audio element for cleanup
       audio.id = `audio-${userId}`;
@@ -813,29 +793,16 @@ const App: React.FC = () => {
                       console.log(`Audio ${index}:`, {
                         paused: audio.paused,
                         readyState: audio.readyState,
-                        duration: audio.duration,
-                        needsUserInteraction: (audio as any).needsUserInteraction
+                        duration: audio.duration
                       });
                       
-                      if (audio.paused) {
-                        audio.play().then(() => {
-                          console.log(`🎵 Audio ${index} started playing successfully`);
-                        }).catch(e => {
-                          console.log(`Could not play audio ${index}:`, e);
-                        });
-                      }
-                    });
-                    
-                    // Also try to enable microphone if not already enabled
-                    if (state.localStream) {
-                      const audioTracks = state.localStream.getAudioTracks();
-                      audioTracks.forEach(track => {
-                        if (!track.enabled) {
-                          track.enabled = true;
-                          console.log('🎤 Enabled audio track');
-                        }
+                      // Force play the audio
+                      audio.play().then(() => {
+                        console.log(`🎵 Audio ${index} started playing successfully`);
+                      }).catch(e => {
+                        console.log(`Could not play audio ${index}:`, e);
                       });
-                    }
+                    });
                   }}
                   style={{
                     padding: '0.5rem 1rem',
