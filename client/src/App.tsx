@@ -102,14 +102,33 @@ const App: React.FC = () => {
       audio.autoplay = true;
       audio.volume = 1.0;
       
-      // Add event listeners for debugging
+      // Add event listeners for debugging and mobile compatibility
       audio.onloadedmetadata = () => {
         console.log('🎵 Audio metadata loaded for', userId);
-        audio.play().catch(e => console.error('Audio play failed:', e));
+        // Try to play audio - mobile browsers may require user interaction
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(e => {
+            console.error('Audio play failed for', userId, ':', e);
+            // On mobile, this might fail due to autoplay policy
+            console.log('This is normal on mobile - audio will play when user interacts');
+          });
+        }
       };
       
       audio.onplay = () => console.log('🎵 Audio started playing for', userId);
       audio.onerror = (e) => console.error('🎵 Audio error for', userId, e);
+      
+      // Mobile-specific: Try to play when user interacts
+      const tryPlayOnInteraction = () => {
+        if (audio.paused) {
+          audio.play().catch(e => console.log('Still can\'t play audio:', e));
+        }
+      };
+      
+      // Add click listeners to try playing audio
+      document.addEventListener('click', tryPlayOnInteraction, { once: true });
+      document.addEventListener('touchstart', tryPlayOnInteraction, { once: true });
       
       // Store the audio element for cleanup
       audio.id = `audio-${userId}`;
@@ -654,6 +673,33 @@ const App: React.FC = () => {
                 <div>Socket: {state.socket ? '✅ Connected' : '❌ Disconnected'}</div>
                 <div>Local Stream: {state.localStream ? '✅ Active' : '❌ None'}</div>
                 <div>Peer Connections: {state.peerConnections.size}</div>
+              </div>
+              
+              {/* Mobile Audio Helper */}
+              <div style={{ marginTop: '1rem' }}>
+                <button
+                  onClick={() => {
+                    // Try to play all audio elements
+                    const audioElements = document.querySelectorAll('audio');
+                    audioElements.forEach(audio => {
+                      if (audio.paused) {
+                        audio.play().catch(e => console.log('Could not play audio:', e));
+                      }
+                    });
+                    console.log('Attempted to play all audio elements');
+                  }}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    backgroundColor: '#059669',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '0.5rem',
+                    fontSize: '0.875rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🔊 Play Audio (Mobile)
+                </button>
               </div>
             </div>
 
