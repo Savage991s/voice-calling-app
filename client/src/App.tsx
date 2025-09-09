@@ -263,7 +263,10 @@ const App: React.FC = () => {
 
   // Initialize socket connection
   useEffect(() => {
-    const socket = io('http://localhost:5001');
+    // Use the current origin for production, localhost for development
+    const socketUrl = window.location.origin;
+    console.log('Connecting to socket at:', socketUrl);
+    const socket = io(socketUrl);
     setState(prev => ({ ...prev, socket }));
 
     return () => {
