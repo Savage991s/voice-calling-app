@@ -45,7 +45,12 @@ io.on('connection', (socket) => {
   socket.on('join-room', (data) => {
     const { roomCode, username } = data;
     
+    console.log(`Attempting to join room: ${roomCode} by user: ${username}`);
+    console.log('Available rooms:', Array.from(rooms.keys()));
+    console.log('Room exists:', rooms.has(roomCode));
+    
     if (!rooms.has(roomCode)) {
+      console.log(`Room ${roomCode} not found!`);
       socket.emit('error', { message: 'Room not found' });
       return;
     }
@@ -118,6 +123,8 @@ io.on('connection', (socket) => {
     socket.emit('room-created', roomData);
 
     console.log(`Room ${roomCode} created by ${username}`);
+    console.log('Total rooms now:', rooms.size);
+    console.log('All rooms:', Array.from(rooms.keys()));
   });
 
   // Handle WebRTC signaling
@@ -195,6 +202,7 @@ io.on('connection', (socket) => {
         if (room.users.size === 0) {
           rooms.delete(user.roomCode);
           console.log(`Room ${user.roomCode} deleted (empty)`);
+          console.log('Remaining rooms:', Array.from(rooms.keys()));
         }
       }
       

@@ -530,7 +530,14 @@ const App: React.FC = () => {
 
   const joinRoom = () => {
     console.log('Attempting to join room:', joinCode, 'for user:', username);
+    console.log('Socket connected:', state.socket?.connected);
+    console.log('Socket ID:', state.socket?.id);
+    
     if (state.socket && username.trim() && joinCode.trim()) {
+      console.log('Emitting join-room event with:', { 
+        roomCode: joinCode.trim().toUpperCase(), 
+        username: username.trim() 
+      });
       state.socket.emit('join-room', { 
         roomCode: joinCode.trim().toUpperCase(), 
         username: username.trim() 
