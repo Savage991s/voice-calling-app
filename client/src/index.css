@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind CSS removed for now - using inline styles */
 
 body {
   margin: 0;
