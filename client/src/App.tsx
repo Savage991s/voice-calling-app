@@ -310,6 +310,20 @@ const App: React.FC = () => {
     const socketUrl = window.location.origin;
     console.log('Connecting to socket at:', socketUrl);
     const socket = io(socketUrl);
+    
+    // Add connection event listeners
+    socket.on('connect', () => {
+      console.log('✅ Socket connected! ID:', socket.id);
+    });
+    
+    socket.on('disconnect', () => {
+      console.log('❌ Socket disconnected');
+    });
+    
+    socket.on('connect_error', (error) => {
+      console.error('❌ Socket connection error:', error);
+    });
+    
     setState(prev => ({ ...prev, socket }));
 
     return () => {
@@ -322,7 +336,16 @@ const App: React.FC = () => {
     if (!state.socket) return;
 
     state.socket.on('room-created', (data) => {
-      console.log('Room created:', data);
+      console.log('🎉 Room created successfully:', data);
+      console.log('Room code:', data.roomCode);
+      console.log('Users:', data.users);
+      
+      // Clear the timeout since room creation was successful
+      if ((window as any).roomCreationTimeout) {
+        clearTimeout((window as any).roomCreationTimeout);
+        (window as any).roomCreationTimeout = null;
+      }
+      
       setState(prev => ({
         ...prev,
         roomCode: data.roomCode,
@@ -331,9 +354,21 @@ const App: React.FC = () => {
       }));
       setShowJoinForm(false);
     });
+    
+    // Add debugging for all socket events
+    state.socket.onAny((eventName, ...args) => {
+      console.log('📡 Socket event received:', eventName, args);
+    });
 
     state.socket.on('room-joined', (data) => {
       console.log('Successfully joined room:', data);
+      
+      // Clear any pending timeout since room operation was successful
+      if ((window as any).roomCreationTimeout) {
+        clearTimeout((window as any).roomCreationTimeout);
+        (window as any).roomCreationTimeout = null;
+      }
+      
       setState(prev => ({
         ...prev,
         roomCode: data.roomCode,
@@ -414,6 +449,13 @@ const App: React.FC = () => {
 
     state.socket.on('error', (error) => {
       console.log('Socket error:', error);
+      
+      // Clear any pending timeout since we got an error response
+      if ((window as any).roomCreationTimeout) {
+        clearTimeout((window as any).roomCreationTimeout);
+        (window as any).roomCreationTimeout = null;
+      }
+      
       alert(error.message);
     });
 
@@ -434,7 +476,11 @@ const App: React.FC = () => {
 
   const createRoom = () => {
     console.log('Creating room for user:', username);
+    console.log('Socket connected:', state.socket?.connected);
+    console.log('Socket ID:', state.socket?.id);
+    
     if (state.socket && username.trim()) {
+      console.log('Emitting create-room event...');
       state.socket.emit('create-room', { username: username.trim() });
       setState(prev => ({
         ...prev,
@@ -445,6 +491,25 @@ const App: React.FC = () => {
           isAudioEnabled: true
         }
       }));
+      
+      // Add timeout to detect if room creation fails
+      // The timeout will be cleared when room-created event is received
+      const timeoutId = setTimeout(() => {
+        console.error('❌ Room creation timed out - no response from server');
+        alert('Room creation failed. Please check your connection and try again.');
+      }, 5000);
+      
+      // Store timeout ID to clear it when room is created
+      // We'll clear this in the room-created event handler
+      (window as any).roomCreationTimeout = timeoutId;
+    } else {
+      console.error('Cannot create room - socket:', !!state.socket, 'username:', username);
+      if (!state.socket) {
+        alert('Not connected to server. Please refresh the page and try again.');
+      }
+      if (!username.trim()) {
+        alert('Please enter a username.');
+      }
     }
   };
 
@@ -464,6 +529,15 @@ const App: React.FC = () => {
           isAudioEnabled: true
         }
       }));
+      
+      // Add timeout to detect if room joining fails
+      const timeoutId = setTimeout(() => {
+        console.error('❌ Room join timed out - no response from server');
+        alert('Failed to join room. Please check the room code and try again.');
+      }, 5000);
+      
+      // Store timeout ID to clear it when room is joined
+      (window as any).roomCreationTimeout = timeoutId;
     } else {
       console.log('Missing requirements - socket:', !!state.socket, 'username:', username, 'joinCode:', joinCode);
     }

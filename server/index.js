@@ -109,10 +109,13 @@ io.on('connection', (socket) => {
     // Add user to room
     room.users.set(socket.id, users.get(socket.id));
     
-    socket.emit('room-created', {
+    const roomData = {
       roomCode,
       users: Array.from(room.users.values())
-    });
+    };
+    
+    console.log(`Sending room-created event to ${socket.id}:`, roomData);
+    socket.emit('room-created', roomData);
 
     console.log(`Room ${roomCode} created by ${username}`);
   });
