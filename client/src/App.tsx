@@ -101,6 +101,22 @@ const App: React.FC = () => {
       audio.srcObject = event.streams[0];
       audio.autoplay = true;
       audio.volume = 1.0;
+      audio.muted = false;
+      audio.controls = false;
+      
+      // Mobile-specific audio context handling
+      if (typeof (window as any).AudioContext !== 'undefined' || typeof (window as any).webkitAudioContext !== 'undefined') {
+        try {
+          const AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
+          const audioContext = new AudioContext();
+          if (audioContext.state === 'suspended') {
+            console.log('Audio context suspended, will resume on user interaction');
+            (audio as any).audioContext = audioContext;
+          }
+        } catch (e) {
+          console.log('Could not create audio context:', e);
+        }
+      }
       
       // Add event listeners for debugging and mobile compatibility
       audio.onloadedmetadata = () => {
@@ -141,20 +157,48 @@ const App: React.FC = () => {
       
       // Add mobile-specific interaction handling
       const tryPlayAudio = () => {
-        if (audio.paused && (audio as any).needsUserInteraction) {
-          console.log('🎵 Trying to play audio after user interaction for', userId);
+        console.log('🎵 User interaction detected, trying to play audio for', userId);
+        
+        // Resume audio context if suspended
+        if ((audio as any).audioContext && (audio as any).audioContext.state === 'suspended') {
+          (audio as any).audioContext.resume().then(() => {
+            console.log('Audio context resumed');
+          }).catch((e: any) => {
+            console.log('Could not resume audio context:', e);
+          });
+        }
+        
+        // Try to play the audio
+        if (audio.paused) {
           audio.play().then(() => {
             console.log('🎵 Audio started playing after interaction for', userId);
             (audio as any).needsUserInteraction = false;
           }).catch(e => {
             console.log('Still can\'t play audio after interaction:', e);
+            // Try alternative approach - create new audio element
+            console.log('Trying alternative audio approach...');
+            const newAudio = new Audio();
+            newAudio.srcObject = event.streams[0];
+            newAudio.volume = 1.0;
+            newAudio.muted = false;
+            newAudio.play().then(() => {
+              console.log('🎵 Alternative audio approach worked!');
+              // Replace the old audio element
+              audio.remove();
+              newAudio.id = `audio-${userId}`;
+              document.body.appendChild(newAudio);
+            }).catch(e2 => {
+              console.log('Alternative approach also failed:', e2);
+            });
           });
         }
       };
       
-      // Add event listeners for user interaction
+      // Add event listeners for user interaction (multiple events for better mobile support)
       document.addEventListener('click', tryPlayAudio, { once: true });
       document.addEventListener('touchstart', tryPlayAudio, { once: true });
+      document.addEventListener('touchend', tryPlayAudio, { once: true });
+      document.addEventListener('mousedown', tryPlayAudio, { once: true });
       
       // Store the audio element for cleanup
       audio.id = `audio-${userId}`;
@@ -814,13 +858,53 @@ const App: React.FC = () => {
                     onClick={() => {
                       console.log('🔊 Quick audio test clicked');
                       const audioElements = document.querySelectorAll('audio');
+                      console.log('Found audio elements:', audioElements.length);
+                      
+                      // Resume any suspended audio contexts
+                      if (typeof (window as any).AudioContext !== 'undefined' || typeof (window as any).webkitAudioContext !== 'undefined') {
+                        const AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
+                        try {
+                          const audioContext = new AudioContext();
+                          if (audioContext.state === 'suspended') {
+                            audioContext.resume().then(() => {
+                              console.log('Audio context resumed');
+                            });
+                          }
+                        } catch (e) {
+                          console.log('Could not resume audio context:', e);
+                        }
+                      }
+                      
                       audioElements.forEach((audio, index) => {
-                        console.log(`Testing audio ${index}:`, audio.paused ? 'PAUSED' : 'PLAYING');
+                        console.log(`Testing audio ${index}:`, {
+                          paused: audio.paused,
+                          readyState: audio.readyState,
+                          srcObject: audio.srcObject,
+                          volume: audio.volume,
+                          muted: audio.muted
+                        });
+                        
+                        // Force unmute and set volume
+                        audio.muted = false;
+                        audio.volume = 1.0;
+                        
                         if (audio.paused) {
                           audio.play().then(() => {
                             console.log(`✅ Audio ${index} now playing`);
                           }).catch(e => {
                             console.log(`❌ Audio ${index} failed:`, e);
+                            // Try creating a new audio element
+                            if (audio.srcObject) {
+                              const newAudio = new Audio();
+                              newAudio.srcObject = audio.srcObject;
+                              newAudio.volume = 1.0;
+                              newAudio.muted = false;
+                              newAudio.play().then(() => {
+                                console.log(`✅ New audio ${index} playing`);
+                              }).catch(e2 => {
+                                console.log(`❌ New audio ${index} also failed:`, e2);
+                              });
+                            }
                           });
                         }
                       });
