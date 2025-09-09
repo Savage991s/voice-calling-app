@@ -105,13 +105,19 @@ const App: React.FC = () => {
       // Add event listeners for debugging and mobile compatibility
       audio.onloadedmetadata = () => {
         console.log('🎵 Audio metadata loaded for', userId);
+        console.log('Audio duration:', audio.duration);
+        console.log('Audio ready state:', audio.readyState);
+        
         // Try to play audio - mobile browsers may require user interaction
         const playPromise = audio.play();
         if (playPromise !== undefined) {
-          playPromise.catch(e => {
+          playPromise.then(() => {
+            console.log('🎵 Audio started playing successfully for', userId);
+          }).catch(e => {
             console.error('Audio play failed for', userId, ':', e);
-            // On mobile, this might fail due to autoplay policy
             console.log('This is normal on mobile - audio will play when user interacts');
+            // Store the audio element for later retry
+            (audio as any).needsUserInteraction = true;
           });
         }
       };
@@ -121,14 +127,21 @@ const App: React.FC = () => {
       
       // Mobile-specific: Try to play when user interacts
       const tryPlayOnInteraction = () => {
+        console.log('User interaction detected, trying to play audio for', userId);
         if (audio.paused) {
-          audio.play().catch(e => console.log('Still can\'t play audio:', e));
+          audio.play().then(() => {
+            console.log('🎵 Audio started playing after user interaction for', userId);
+            (audio as any).needsUserInteraction = false;
+          }).catch(e => {
+            console.log('Still can\'t play audio after interaction:', e);
+          });
         }
       };
       
       // Add click listeners to try playing audio
       document.addEventListener('click', tryPlayOnInteraction, { once: true });
       document.addEventListener('touchstart', tryPlayOnInteraction, { once: true });
+      document.addEventListener('touchend', tryPlayOnInteraction, { once: true });
       
       // Store the audio element for cleanup
       audio.id = `audio-${userId}`;
@@ -241,14 +254,22 @@ const App: React.FC = () => {
   const startCall = useCallback(async () => {
     try {
       console.log('Requesting microphone access...');
+      console.log('User agent:', navigator.userAgent);
+      console.log('Is mobile:', /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
+      
       const stream = await navigator.mediaDevices.getUserMedia({
         video: false, // Voice only - no video
-        audio: state.isAudioEnabled
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       });
 
       console.log('Microphone access granted!', stream);
       console.log('Audio tracks:', stream.getAudioTracks());
       console.log('Audio track enabled:', stream.getAudioTracks()[0]?.enabled);
+      console.log('Audio track settings:', stream.getAudioTracks()[0]?.getSettings());
       
       // Create a local audio element so you can hear yourself
       const testAudio = new Audio();
@@ -298,9 +319,23 @@ const App: React.FC = () => {
           }
         }
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error accessing media devices:', error);
-      alert('Microphone access denied. Please allow microphone access and refresh the page.');
+      console.error('Error name:', error.name);
+      console.error('Error message:', error.message);
+      
+      let errorMessage = 'Microphone access denied. ';
+      if (error.name === 'NotAllowedError') {
+        errorMessage += 'Please allow microphone access in your browser settings and refresh the page.';
+      } else if (error.name === 'NotFoundError') {
+        errorMessage += 'No microphone found. Please connect a microphone and try again.';
+      } else if (error.name === 'NotSupportedError') {
+        errorMessage += 'Your browser does not support microphone access. Please use a modern browser.';
+      } else {
+        errorMessage += 'Please check your microphone and try again.';
+      }
+      
+      alert(errorMessage);
     }
   }, [state.isAudioEnabled, state.users, state.currentUser?.id, createPeerConnection, state.socket]);
 
@@ -742,6 +777,22 @@ const App: React.FC = () => {
               <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>Voice Call Active</h2>
               <p style={{ color: '#9ca3af' }}>Speaking with {state.users.length - 1} other participant{state.users.length - 1 !== 1 ? 's' : ''}</p>
               
+              {/* Mobile Instructions */}
+              {/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) && (
+                <div style={{ 
+                  marginTop: '1rem', 
+                  padding: '0.75rem', 
+                  backgroundColor: '#1e40af', 
+                  borderRadius: '0.5rem',
+                  fontSize: '0.875rem',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontWeight: '600', marginBottom: '0.5rem' }}>📱 Mobile User</div>
+                  <div>Tap anywhere on screen to enable audio</div>
+                  <div>Use the "Enable Audio" button if needed</div>
+                </div>
+              )}
+              
               {/* Debug Info */}
               <div style={{ marginTop: '1rem', padding: '0.5rem', backgroundColor: '#374151', borderRadius: '0.5rem', fontSize: '0.875rem' }}>
                 <div>Socket: {state.socket ? '✅ Connected' : '❌ Disconnected'}</div>
@@ -753,14 +804,38 @@ const App: React.FC = () => {
               <div style={{ marginTop: '1rem' }}>
                 <button
                   onClick={() => {
+                    console.log('🔊 Mobile audio helper clicked');
                     // Try to play all audio elements
                     const audioElements = document.querySelectorAll('audio');
-                    audioElements.forEach(audio => {
+                    console.log('Found audio elements:', audioElements.length);
+                    
+                    audioElements.forEach((audio, index) => {
+                      console.log(`Audio ${index}:`, {
+                        paused: audio.paused,
+                        readyState: audio.readyState,
+                        duration: audio.duration,
+                        needsUserInteraction: (audio as any).needsUserInteraction
+                      });
+                      
                       if (audio.paused) {
-                        audio.play().catch(e => console.log('Could not play audio:', e));
+                        audio.play().then(() => {
+                          console.log(`🎵 Audio ${index} started playing successfully`);
+                        }).catch(e => {
+                          console.log(`Could not play audio ${index}:`, e);
+                        });
                       }
                     });
-                    console.log('Attempted to play all audio elements');
+                    
+                    // Also try to enable microphone if not already enabled
+                    if (state.localStream) {
+                      const audioTracks = state.localStream.getAudioTracks();
+                      audioTracks.forEach(track => {
+                        if (!track.enabled) {
+                          track.enabled = true;
+                          console.log('🎤 Enabled audio track');
+                        }
+                      });
+                    }
                   }}
                   style={{
                     padding: '0.5rem 1rem',
@@ -772,7 +847,7 @@ const App: React.FC = () => {
                     cursor: 'pointer'
                   }}
                 >
-                  🔊 Play Audio (Mobile)
+                  🔊 Enable Audio (Mobile)
                 </button>
               </div>
             </div>
