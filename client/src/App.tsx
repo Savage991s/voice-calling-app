@@ -107,6 +107,8 @@ const App: React.FC = () => {
         console.log('🎵 Audio metadata loaded for', userId);
         console.log('Audio duration:', audio.duration);
         console.log('Audio ready state:', audio.readyState);
+        console.log('Audio tracks:', event.streams[0].getAudioTracks());
+        console.log('Audio track enabled:', event.streams[0].getAudioTracks()[0]?.enabled);
         
         // Try to play audio - mobile browsers may require user interaction
         const playPromise = audio.play();
@@ -116,12 +118,43 @@ const App: React.FC = () => {
           }).catch(e => {
             console.error('Audio play failed for', userId, ':', e);
             console.log('This is normal on mobile - audio will play when user interacts');
+            // Mark this audio as needing user interaction
+            (audio as any).needsUserInteraction = true;
           });
         }
       };
       
-      audio.onplay = () => console.log('🎵 Audio started playing for', userId);
-      audio.onerror = (e) => console.error('🎵 Audio error for', userId, e);
+      audio.onplay = () => {
+        console.log('🎵 Audio started playing for', userId);
+        (audio as any).needsUserInteraction = false;
+      };
+      
+      audio.onerror = (e) => {
+        console.error('🎵 Audio error for', userId, e);
+        console.error('Audio error details:', {
+          error: e,
+          srcObject: audio.srcObject,
+          readyState: audio.readyState,
+          networkState: audio.networkState
+        });
+      };
+      
+      // Add mobile-specific interaction handling
+      const tryPlayAudio = () => {
+        if (audio.paused && (audio as any).needsUserInteraction) {
+          console.log('🎵 Trying to play audio after user interaction for', userId);
+          audio.play().then(() => {
+            console.log('🎵 Audio started playing after interaction for', userId);
+            (audio as any).needsUserInteraction = false;
+          }).catch(e => {
+            console.log('Still can\'t play audio after interaction:', e);
+          });
+        }
+      };
+      
+      // Add event listeners for user interaction
+      document.addEventListener('click', tryPlayAudio, { once: true });
+      document.addEventListener('touchstart', tryPlayAudio, { once: true });
       
       // Store the audio element for cleanup
       audio.id = `audio-${userId}`;
@@ -777,6 +810,34 @@ const App: React.FC = () => {
                   <div style={{ fontWeight: '600', marginBottom: '0.5rem' }}>📱 Mobile User</div>
                   <div>Tap anywhere on screen to enable audio</div>
                   <div>Use the "Enable Audio" button if needed</div>
+                  <button
+                    onClick={() => {
+                      console.log('🔊 Quick audio test clicked');
+                      const audioElements = document.querySelectorAll('audio');
+                      audioElements.forEach((audio, index) => {
+                        console.log(`Testing audio ${index}:`, audio.paused ? 'PAUSED' : 'PLAYING');
+                        if (audio.paused) {
+                          audio.play().then(() => {
+                            console.log(`✅ Audio ${index} now playing`);
+                          }).catch(e => {
+                            console.log(`❌ Audio ${index} failed:`, e);
+                          });
+                        }
+                      });
+                    }}
+                    style={{
+                      marginTop: '0.5rem',
+                      padding: '0.25rem 0.5rem',
+                      backgroundColor: '#059669',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '0.25rem',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🔊 Test Audio
+                  </button>
                 </div>
               )}
               
@@ -800,16 +861,41 @@ const App: React.FC = () => {
                       console.log(`Audio ${index}:`, {
                         paused: audio.paused,
                         readyState: audio.readyState,
-                        duration: audio.duration
+                        duration: audio.duration,
+                        srcObject: audio.srcObject,
+                        needsUserInteraction: (audio as any).needsUserInteraction
                       });
                       
                       // Force play the audio
                       audio.play().then(() => {
                         console.log(`🎵 Audio ${index} started playing successfully`);
+                        (audio as any).needsUserInteraction = false;
                       }).catch(e => {
                         console.log(`Could not play audio ${index}:`, e);
+                        // Try to enable audio tracks
+                        if (audio.srcObject) {
+                          const stream = audio.srcObject as MediaStream;
+                          const audioTracks = stream.getAudioTracks();
+                          audioTracks.forEach(track => {
+                            if (!track.enabled) {
+                              track.enabled = true;
+                              console.log(`🎤 Enabled audio track for audio ${index}`);
+                            }
+                          });
+                        }
                       });
                     });
+                    
+                    // Also try to enable microphone if not already enabled
+                    if (state.localStream) {
+                      const audioTracks = state.localStream.getAudioTracks();
+                      audioTracks.forEach(track => {
+                        if (!track.enabled) {
+                          track.enabled = true;
+                          console.log('🎤 Enabled local audio track');
+                        }
+                      });
+                    }
                   }}
                   style={{
                     padding: '0.5rem 1rem',
