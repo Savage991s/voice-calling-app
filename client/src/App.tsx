@@ -48,6 +48,7 @@ const App: React.FC = () => {
   const [messageText, setMessageText] = useState('');
   const [showJoinForm, setShowJoinForm] = useState(true);
   const [selfAudioEnabled, setSelfAudioEnabled] = useState(false);
+  const [connectionAttempts, setConnectionAttempts] = useState(new Set<string>());
 
   // Video refs removed - voice only app
 
@@ -85,7 +86,7 @@ const App: React.FC = () => {
 
     peerConnection.ontrack = (event) => {
       // Audio stream received - voice only app
-      console.log('Audio stream received from', userId);
+      console.log('🎵 Audio stream received from', userId);
       console.log('Remote stream:', event.streams[0]);
       console.log('Audio tracks in remote stream:', event.streams[0].getAudioTracks());
       
@@ -101,11 +102,20 @@ const App: React.FC = () => {
       audio.autoplay = true;
       audio.volume = 1.0;
       
+      // Add event listeners for debugging
+      audio.onloadedmetadata = () => {
+        console.log('🎵 Audio metadata loaded for', userId);
+        audio.play().catch(e => console.error('Audio play failed:', e));
+      };
+      
+      audio.onplay = () => console.log('🎵 Audio started playing for', userId);
+      audio.onerror = (e) => console.error('🎵 Audio error for', userId, e);
+      
       // Store the audio element for cleanup
       audio.id = `audio-${userId}`;
       document.body.appendChild(audio);
       
-      console.log('Audio element created and playing for user:', userId);
+      console.log('🎵 Audio element created for user:', userId);
     };
 
     return peerConnection;
@@ -134,6 +144,13 @@ const App: React.FC = () => {
     
     // Check if we already have a connection for this user
     let peerConnection = state.peerConnections.get(senderId);
+    
+    // If connection exists but is closed, remove it and create a new one
+    if (peerConnection && peerConnection.signalingState === 'closed') {
+      console.log('Removing closed connection for', senderId);
+      cleanupPeerConnection(senderId);
+      peerConnection = undefined;
+    }
     
     if (!peerConnection) {
       peerConnection = createPeerConnection(senderId);
@@ -165,7 +182,7 @@ const App: React.FC = () => {
     } catch (error) {
       console.error('Error handling offer:', error);
     }
-  }, [createPeerConnection, state.socket, state.peerConnections]);
+  }, [createPeerConnection, state.socket, state.peerConnections, cleanupPeerConnection]);
 
   const handleAnswer = useCallback(async (answer: RTCSessionDescriptionInit, senderId: string) => {
     console.log('Handling answer from:', senderId);
@@ -190,8 +207,15 @@ const App: React.FC = () => {
 
   const handleIceCandidate = useCallback(async (candidate: RTCIceCandidateInit, senderId: string) => {
     const peerConnection = state.peerConnections.get(senderId);
-    if (peerConnection) {
-      await peerConnection.addIceCandidate(candidate);
+    if (peerConnection && peerConnection.signalingState !== 'closed') {
+      try {
+        await peerConnection.addIceCandidate(candidate);
+        console.log('ICE candidate added successfully for', senderId);
+      } catch (error) {
+        console.error('Error adding ICE candidate for', senderId, ':', error);
+      }
+    } else {
+      console.log('Cannot add ICE candidate - connection closed or not found for', senderId);
     }
   }, [state.peerConnections]);
 
@@ -309,8 +333,12 @@ const App: React.FC = () => {
       }));
       
       // If we have a local stream, create a connection for the new user
-      if (state.localStream && data.user.id !== state.currentUser?.id && !state.peerConnections.has(data.user.id)) {
+      if (state.localStream && data.user.id !== state.currentUser?.id && !state.peerConnections.has(data.user.id) && !connectionAttempts.has(data.user.id)) {
         console.log('Creating connection for new user:', data.user.username);
+        
+        // Mark this user as having a connection attempt in progress
+        setConnectionAttempts(prev => new Set(prev).add(data.user.id));
+        
         const peerConnection = createPeerConnection(data.user.id);
         state.localStream.getTracks().forEach(track => {
           peerConnection.addTrack(track, state.localStream!);
@@ -333,9 +361,17 @@ const App: React.FC = () => {
           }
         }).catch(error => {
           console.error('Error creating offer for new user:', error);
+          // Remove from connection attempts on error
+          setConnectionAttempts(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(data.user.id);
+            return newSet;
+          });
         });
       } else if (state.peerConnections.has(data.user.id)) {
         console.log('Connection already exists for new user:', data.user.username);
+      } else if (connectionAttempts.has(data.user.id)) {
+        console.log('Connection attempt already in progress for:', data.user.username);
       }
     });
 
@@ -612,6 +648,13 @@ const App: React.FC = () => {
               <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎙️</div>
               <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>Voice Call Active</h2>
               <p style={{ color: '#9ca3af' }}>Speaking with {state.users.length - 1} other participant{state.users.length - 1 !== 1 ? 's' : ''}</p>
+              
+              {/* Debug Info */}
+              <div style={{ marginTop: '1rem', padding: '0.5rem', backgroundColor: '#374151', borderRadius: '0.5rem', fontSize: '0.875rem' }}>
+                <div>Socket: {state.socket ? '✅ Connected' : '❌ Disconnected'}</div>
+                <div>Local Stream: {state.localStream ? '✅ Active' : '❌ None'}</div>
+                <div>Peer Connections: {state.peerConnections.size}</div>
+              </div>
             </div>
 
             {/* Participants List */}
